@@ -1,8 +1,9 @@
 // ============================================================
 // DESIGN: Neon Command Center — Fixed sidebar with icon nav
-// Deep navy sidebar with glowing active indicator
+// Deep navy sidebar with glowing active indicator.
+// Adds: store-driven unread badge, deadline reminder banner, demo reset.
 // ============================================================
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useMemo } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   LayoutDashboard,
@@ -11,10 +12,12 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Rocket,
+  RotateCcw,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { emails } from '@/lib/data';
+import { useAppData, daysUntil } from '@/contexts/AppDataContext';
 import { cn } from '@/lib/utils';
 
 const LOGO_URL = 'https://d2xsxph8kpxj0f.cloudfront.net/310419663029430919/DXq4Kckp3tEZgiQpA6EUKp/sidebar-logo-gRiJrYXbnV4pCpsYUM9iZH.webp';
@@ -33,7 +36,20 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const unreadCount = emails.filter((e) => !e.read).length;
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const { unreadCount, deadlines, settings, resetDemo } = useAppData();
+
+  // Soonest deadline within 2 days (for the reminder banner)
+  const soonest = useMemo(() => {
+    const upcoming = deadlines
+      .map((d) => ({ d, left: daysUntil(d.date) }))
+      .filter((x) => x.left >= 0 && x.left <= 2)
+      .sort((a, b) => a.left - b.left);
+    return upcoming[0] ?? null;
+  }, [deadlines]);
+
+  const showBanner =
+    settings.deadlineReminders && soonest && !bannerDismissed;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -127,8 +143,37 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           })}
         </nav>
 
-        {/* Collapse Toggle */}
-        <div className="p-3 border-t border-sidebar-border">
+        {/* Footer: Reset Demo + Collapse */}
+        <div className="p-3 border-t border-sidebar-border space-y-1">
+          <button
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Reset the demo to its starting state? This clears any changes you made.'
+                )
+              ) {
+                setBannerDismissed(false);
+                resetDemo();
+              }
+            }}
+            title="Reset demo data"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sidebar-foreground/40 hover:text-neon-rose hover:bg-neon-rose/10 transition-all duration-200"
+          >
+            <RotateCcw size={16} />
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="text-xs font-medium"
+                >
+                  Reset Demo
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-200"
@@ -152,6 +197,45 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        {/* Deadline reminder banner */}
+        <AnimatePresence>
+          {showBanner && soonest && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="border-b border-neon-amber/20 bg-neon-amber/8"
+            >
+              <div className="flex items-center gap-3 px-6 py-2.5">
+                <AlertTriangle size={16} className="text-neon-amber shrink-0" />
+                <p className="text-sm text-foreground/90 flex-1">
+                  <span className="font-semibold">{soonest.d.company}</span>{' '}
+                  {soonest.d.type.toLowerCase()} is due{' '}
+                  <span className="font-semibold text-neon-amber">
+                    {soonest.left === 0
+                      ? 'today'
+                      : soonest.left === 1
+                      ? 'tomorrow'
+                      : `in ${soonest.left} days`}
+                  </span>
+                  .
+                </p>
+                <Link href="/deadlines">
+                  <span className="text-xs font-medium text-neon-amber hover:underline cursor-pointer">
+                    View
+                  </span>
+                </Link>
+                <button
+                  onClick={() => setBannerDismissed(true)}
+                  className="p-1 rounded hover:bg-neon-amber/15 text-muted-foreground"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           <motion.div
             key={location}

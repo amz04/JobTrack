@@ -1,6 +1,7 @@
 // ============================================================
 // DESIGN: Neon Command Center — Mission control dashboard
 // Stats row, recommended jobs, application cards, activity chart, CV card
+// ALL data is now driven by the in-browser store (useAppData).
 // ============================================================
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,7 +10,6 @@ import {
   Users,
   Trophy,
   TrendingUp,
-  Eye,
   StickyNote,
   MapPin,
   DollarSign,
@@ -26,6 +26,7 @@ import {
   Linkedin,
   Globe,
   Search,
+  Check,
 } from 'lucide-react';
 import {
   BarChart,
@@ -37,21 +38,17 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import {
-  applications,
-  stats,
   weeklyActivity,
   statusColors,
   statusProgressColors,
-  profileData,
   recommendedJobs,
   cvData,
   type Application,
   type RecommendedJob,
   type JobSource,
 } from '@/lib/data';
+import { useAppData } from '@/contexts/AppDataContext';
 import { cn } from '@/lib/utils';
-
-const AVATAR_URL = profileData.avatarUrl;
 
 // ============================================================
 // Source platform config — icons, colors, labels
@@ -65,27 +62,31 @@ const sourceConfig: Record<JobSource, { label: string; color: string; bgColor: s
 };
 
 // ============================================================
-// Animated counter hook
+// Animated counter hook — re-animates whenever `end` changes
+// (so adding an application makes the stat tick up live)
 // ============================================================
-function useCountUp(end: number, duration: number = 1200) {
+function useCountUp(end: number, duration: number = 1000) {
   const [count, setCount] = useState(0);
-  const ref = useRef<boolean>(false);
+  const prev = useRef(0);
 
   useEffect(() => {
-    if (ref.current) return;
-    ref.current = true;
-    let start = 0;
-    const step = end / (duration / 16);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) {
-        setCount(end);
-        clearInterval(timer);
-      } else {
-        setCount(Math.floor(start));
-      }
-    }, 16);
-    return () => clearInterval(timer);
+    const from = prev.current;
+    const to = end;
+    prev.current = end;
+    if (from === to) {
+      setCount(to);
+      return;
+    }
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setCount(Math.round(from + (to - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [end, duration]);
 
   return count;
@@ -170,7 +171,7 @@ function ApplicationRow({ app, index }: { app: Application; index: number }) {
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 0.05 * index, duration: 0.3 }}
+        transition={{ delay: 0.05 * Math.min(index, 8), duration: 0.3 }}
         className="group grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-3.5 rounded-xl hover:bg-surface-2/50 transition-all duration-200 border border-transparent hover:border-border/30"
       >
         <div
@@ -244,20 +245,26 @@ function ApplicationRow({ app, index }: { app: Application; index: number }) {
 }
 
 // ============================================================
-// Apply Modal
+// Apply Modal — calls onApplied() the moment it succeeds
 // ============================================================
 function ApplyModal({
   job,
   onClose,
+  onApplied,
 }: {
   job: RecommendedJob;
   onClose: () => void;
+  onApplied: () => void;
 }) {
   const [stage, setStage] = useState<'applying' | 'success'>('applying');
 
   useEffect(() => {
-    const timer = setTimeout(() => setStage('success'), 1800);
+    const timer = setTimeout(() => {
+      setStage('success');
+      onApplied();
+    }, 1800);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -305,8 +312,8 @@ function ApplyModal({
             </h3>
             <p className="text-sm text-muted-foreground mb-4">
               {job.easyApply
-                ? `Your CV has been sent to ${job.company} for the ${job.title} role.`
-                : `The ${job.company} application form is now open. Complete it to apply.`}
+                ? `Your CV has been sent to ${job.company} for the ${job.title} role. It's now in your tracker.`
+                : `The ${job.company} application form is now open and added to your tracker.`}
             </p>
             <button
               onClick={onClose}
@@ -326,6 +333,8 @@ function ApplyModal({
 // ============================================================
 function RecommendedJobCard({ job, index }: { job: RecommendedJob; index: number }) {
   const [showModal, setShowModal] = useState(false);
+  const { addApplication, appliedJobIds } = useAppData();
+  const isApplied = appliedJobIds.includes(job.id);
   const src = sourceConfig[job.source];
 
   return (
@@ -381,37 +390,57 @@ function RecommendedJobCard({ job, index }: { job: RecommendedJob; index: number
           </div>
         </div>
 
-        {/* Apply button */}
-        <button
-          onClick={() => setShowModal(true)}
-          className={cn(
-            'w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200 border',
-            job.easyApply
-              ? 'bg-neon-blue/12 text-neon-blue border-neon-blue/25 hover:bg-neon-blue/22 hover:border-neon-blue/40'
-              : 'bg-neon-purple/12 text-neon-purple border-neon-purple/25 hover:bg-neon-purple/22 hover:border-neon-purple/40'
-          )}
-        >
-          {job.easyApply ? <Zap size={13} /> : <ExternalLink size={13} />}
-          {job.easyApply ? 'Easy Apply' : 'Apply Now'}
-        </button>
+        {/* Apply button / Applied state */}
+        {isApplied ? (
+          <div className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border bg-neon-emerald/12 text-neon-emerald border-neon-emerald/25">
+            <Check size={13} /> Applied
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowModal(true)}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200 border',
+              job.easyApply
+                ? 'bg-neon-blue/12 text-neon-blue border-neon-blue/25 hover:bg-neon-blue/22 hover:border-neon-blue/40'
+                : 'bg-neon-purple/12 text-neon-purple border-neon-purple/25 hover:bg-neon-purple/22 hover:border-neon-purple/40'
+            )}
+          >
+            {job.easyApply ? <Zap size={13} /> : <ExternalLink size={13} />}
+            {job.easyApply ? 'Easy Apply' : 'Apply Now'}
+          </button>
+        )}
       </motion.div>
 
       <AnimatePresence>
-        {showModal && <ApplyModal job={job} onClose={() => setShowModal(false)} />}
+        {showModal && (
+          <ApplyModal
+            job={job}
+            onClose={() => setShowModal(false)}
+            onApplied={() => addApplication(job)}
+          />
+        )}
       </AnimatePresence>
     </>
   );
 }
 
 // ============================================================
-// CV Card
+// CV Card — real file picker, stores the chosen filename
 // ============================================================
 function CVCard() {
+  const { cvFileName, setCvFileName } = useAppData();
   const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleReupload = () => {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     setUploading(true);
-    setTimeout(() => setUploading(false), 2000);
+    setTimeout(() => {
+      setUploading(false);
+      setCvFileName(file.name);
+    }, 1200);
+    e.target.value = ''; // allow re-picking the same file later
   };
 
   return (
@@ -481,9 +510,28 @@ function CVCard() {
         </p>
       </div>
 
+      {/* Current file (after upload) */}
+      {cvFileName && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-neon-blue/8 border border-neon-blue/20 mb-3">
+          <FileText size={13} className="text-neon-blue shrink-0" />
+          <p className="text-xs text-foreground/80 truncate">
+            Current file: <span className="font-medium">{cvFileName}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Hidden real file input */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.doc,.docx"
+        className="hidden"
+        onChange={handleFile}
+      />
+
       {/* Re-upload button */}
       <button
-        onClick={handleReupload}
+        onClick={() => inputRef.current?.click()}
         disabled={uploading}
         className="w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground bg-accent/50 hover:bg-accent transition-all duration-200 border border-border/30 disabled:opacity-50"
       >
@@ -524,6 +572,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // Dashboard Page
 // ============================================================
 export default function Dashboard() {
+  const { applications, stats, profile } = useAppData();
+
   const greeting = (() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -541,7 +591,7 @@ export default function Dashboard() {
       >
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {greeting}, {profileData.name} <span className="inline-block animate-[wave_2s_ease-in-out_infinite]">👋</span>
+            {greeting}, {profile.name} <span className="inline-block animate-[wave_2s_ease-in-out_infinite]">👋</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Here's what's happening with your job applications
@@ -549,11 +599,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-neon-blue/30">
-            <img
-              src={AVATAR_URL}
-              alt="Profile"
-              className="w-full h-full object-cover"
-            />
+            <img src={profile.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
           </div>
         </div>
       </motion.div>
@@ -596,7 +642,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============================================================ */}
-      {/* NEW: Recommended Jobs Section                                */}
+      {/* Recommended Jobs Section                                     */}
       {/* ============================================================ */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -660,9 +706,11 @@ export default function Dashboard() {
 
           {/* Application Rows */}
           <div className="divide-y divide-border/20 max-h-[480px] overflow-y-auto">
-            {applications.map((app, i) => (
-              <ApplicationRow key={app.id} app={app} index={i} />
-            ))}
+            <AnimatePresence initial={false}>
+              {applications.map((app, i) => (
+                <ApplicationRow key={app.id} app={app} index={i} />
+              ))}
+            </AnimatePresence>
           </div>
         </motion.div>
 
@@ -740,9 +788,7 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {/* ============================================================ */}
-          {/* NEW: CV Card                                                 */}
-          {/* ============================================================ */}
+          {/* CV Card */}
           <CVCard />
         </div>
       </div>

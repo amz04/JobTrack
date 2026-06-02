@@ -1,6 +1,7 @@
 // ============================================================
 // DESIGN: Neon Command Center — Clean settings layout
-// Profile, Notifications, Appearance, Connected Accounts
+// Profile (editable), Notifications, Appearance, Connected Accounts.
+// All state is driven by the store + ThemeContext.
 // ============================================================
 import { useState } from 'react';
 import { motion } from 'framer-motion';
@@ -15,30 +16,37 @@ import {
   Mail as MailIcon,
   Sun,
   Moon,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { profileData } from '@/lib/data';
+import { useAppData } from '@/contexts/AppDataContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 
 function SectionHeader({
   icon: Icon,
   title,
   description,
+  action,
 }: {
   icon: typeof User;
   title: string;
   description: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <div className="w-9 h-9 rounded-lg bg-neon-blue/10 flex items-center justify-center">
-        <Icon size={18} className="text-neon-blue" />
+    <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-neon-blue/10 flex items-center justify-center">
+          <Icon size={18} className="text-neon-blue" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-base">{title}</h2>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
       </div>
-      <div>
-        <h2 className="font-semibold text-base">{title}</h2>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
+      {action}
     </div>
   );
 }
@@ -46,21 +54,21 @@ function SectionHeader({
 function ToggleRow({
   label,
   description,
-  defaultChecked = false,
+  checked,
+  onChange,
 }: {
   label: string;
   description: string;
-  defaultChecked?: boolean;
+  checked: boolean;
+  onChange: () => void;
 }) {
-  const [checked, setChecked] = useState(defaultChecked);
-
   return (
     <div className="flex items-center justify-between py-3">
       <div>
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={setChecked} />
+      <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
@@ -69,15 +77,15 @@ function ConnectedAccount({
   name,
   icon,
   iconColor,
-  connected = false,
+  connected,
+  onToggle,
 }: {
   name: string;
   icon: string;
   iconColor: string;
-  connected?: boolean;
+  connected: boolean;
+  onToggle: () => void;
 }) {
-  const [isConnected, setIsConnected] = useState(connected);
-
   return (
     <div className="flex items-center justify-between py-3">
       <div className="flex items-center gap-3">
@@ -90,30 +98,79 @@ function ConnectedAccount({
         <div>
           <p className="text-sm font-medium">{name}</p>
           <p className="text-xs text-muted-foreground">
-            {isConnected ? 'Connected' : 'Not connected'}
+            {connected ? 'Connected' : 'Not connected'}
           </p>
         </div>
       </div>
       <button
-        onClick={() => {
-          setIsConnected(!isConnected);
-          toast(isConnected ? `${name} disconnected` : `${name} connected`);
-        }}
+        onClick={onToggle}
         className={cn(
           'px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border',
-          isConnected
+          connected
             ? 'bg-neon-emerald/10 text-neon-emerald border-neon-emerald/30 hover:bg-neon-emerald/20'
             : 'bg-accent text-muted-foreground border-border/50 hover:text-foreground hover:bg-accent/80'
         )}
       >
-        {isConnected ? 'Connected' : 'Connect'}
+        {connected ? 'Connected' : 'Connect'}
       </button>
     </div>
   );
 }
 
+function Field({
+  label,
+  icon: Icon,
+  value,
+  editing,
+  onChange,
+}: {
+  label: string;
+  icon?: typeof User;
+  value: string;
+  editing: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs text-muted-foreground font-medium">{label}</label>
+      {editing ? (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-1 w-full px-3 py-1.5 rounded-lg bg-background border border-border/50 text-sm outline-none focus:border-neon-blue/50"
+        />
+      ) : (
+        <p className="text-sm font-medium mt-0.5 flex items-center gap-1.5 min-h-[30px]">
+          {Icon && <Icon size={12} className="text-muted-foreground" />}
+          {value}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
-  const [darkMode, setDarkMode] = useState(true);
+  const {
+    profile,
+    settings,
+    updateProfile,
+    toggleSetting,
+    toggleConnection,
+  } = useAppData();
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(profile);
+
+  const startEdit = () => {
+    setDraft(profile);
+    setEditing(true);
+  };
+  const saveEdit = () => {
+    updateProfile(draft);
+    setEditing(false);
+  };
 
   return (
     <div className="p-6 lg:p-8 max-w-[800px] space-y-8">
@@ -139,49 +196,70 @@ export default function Settings() {
           icon={User}
           title="Profile"
           description="Your personal information"
+          action={
+            editing ? (
+              <button
+                onClick={saveEdit}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neon-emerald/12 text-neon-emerald text-xs font-medium hover:bg-neon-emerald/20 transition-colors border border-neon-emerald/25"
+              >
+                <Check size={13} /> Save
+              </button>
+            ) : (
+              <button
+                onClick={startEdit}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-muted-foreground text-xs font-medium hover:text-foreground hover:bg-accent/80 transition-colors border border-border/30"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            )
+          }
         />
 
         <div className="flex items-start gap-5">
           <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-neon-blue/30 shrink-0">
             <img
-              src={profileData.avatarUrl}
+              src={profile.avatarUrl}
               alt="Profile"
               className="w-full h-full object-cover"
             />
           </div>
           <div className="flex-1 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground font-medium">Full Name</label>
-                <p className="text-sm font-medium mt-0.5">{profileData.fullName}</p>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground font-medium">Email</label>
-                <p className="text-sm font-medium mt-0.5 flex items-center gap-1.5">
-                  <MailIcon size={12} className="text-muted-foreground" />
-                  {profileData.email}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground font-medium">University</label>
-                <p className="text-sm font-medium mt-0.5 flex items-center gap-1.5">
-                  <GraduationCap size={12} className="text-muted-foreground" />
-                  {profileData.university}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground font-medium">Graduation Year</label>
-                <p className="text-sm font-medium mt-0.5 flex items-center gap-1.5">
-                  <Calendar size={12} className="text-muted-foreground" />
-                  {profileData.graduationYear}
-                </p>
-              </div>
+              <Field
+                label="Full Name"
+                value={editing ? draft.fullName : profile.fullName}
+                editing={editing}
+                onChange={(v) => setDraft({ ...draft, fullName: v })}
+              />
+              <Field
+                label="Email"
+                icon={MailIcon}
+                value={editing ? draft.email : profile.email}
+                editing={editing}
+                onChange={(v) => setDraft({ ...draft, email: v })}
+              />
+              <Field
+                label="University"
+                icon={GraduationCap}
+                value={editing ? draft.university : profile.university}
+                editing={editing}
+                onChange={(v) => setDraft({ ...draft, university: v })}
+              />
+              <Field
+                label="Graduation Year"
+                icon={Calendar}
+                value={editing ? draft.graduationYear : profile.graduationYear}
+                editing={editing}
+                onChange={(v) => setDraft({ ...draft, graduationYear: v })}
+              />
               <div className="sm:col-span-2">
-                <label className="text-xs text-muted-foreground font-medium">Field of Study</label>
-                <p className="text-sm font-medium mt-0.5 flex items-center gap-1.5">
-                  <BookOpen size={12} className="text-muted-foreground" />
-                  {profileData.fieldOfStudy}
-                </p>
+                <Field
+                  label="Field of Study"
+                  icon={BookOpen}
+                  value={editing ? draft.fieldOfStudy : profile.fieldOfStudy}
+                  editing={editing}
+                  onChange={(v) => setDraft({ ...draft, fieldOfStudy: v })}
+                />
               </div>
             </div>
           </div>
@@ -204,23 +282,27 @@ export default function Settings() {
         <div className="divide-y divide-border/30">
           <ToggleRow
             label="Deadline Reminders"
-            description="Get notified 24 hours before upcoming deadlines"
-            defaultChecked={true}
+            description="Show a reminder banner for upcoming deadlines"
+            checked={settings.deadlineReminders}
+            onChange={() => toggleSetting('deadlineReminders')}
           />
           <ToggleRow
             label="New Email Alerts"
-            description="Receive push notifications for new application emails"
-            defaultChecked={true}
+            description="Receive notifications for new application emails"
+            checked={settings.newEmailAlerts}
+            onChange={() => toggleSetting('newEmailAlerts')}
           />
           <ToggleRow
             label="Weekly Summary"
             description="Get a weekly digest of your application activity"
-            defaultChecked={false}
+            checked={settings.weeklySummary}
+            onChange={() => toggleSetting('weeklySummary')}
           />
           <ToggleRow
             label="Status Updates"
             description="Notifications when application status changes"
-            defaultChecked={true}
+            checked={settings.statusUpdates}
+            onChange={() => toggleSetting('statusUpdates')}
           />
         </div>
       </motion.section>
@@ -240,7 +322,7 @@ export default function Settings() {
 
         <div className="flex items-center justify-between py-3">
           <div className="flex items-center gap-3">
-            {darkMode ? (
+            {isDark ? (
               <Moon size={18} className="text-neon-purple" />
             ) : (
               <Sun size={18} className="text-neon-amber" />
@@ -248,17 +330,11 @@ export default function Settings() {
             <div>
               <p className="text-sm font-medium">Dark Mode</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {darkMode ? 'Dark theme is active' : 'Light theme is active'}
+                {isDark ? 'Dark theme is active' : 'Light theme is active'}
               </p>
             </div>
           </div>
-          <Switch
-            checked={darkMode}
-            onCheckedChange={(val) => {
-              setDarkMode(val);
-              toast(val ? 'Dark mode enabled' : 'Light mode enabled');
-            }}
-          />
+          <Switch checked={isDark} onCheckedChange={() => toggleTheme?.()} />
         </div>
       </motion.section>
 
@@ -280,19 +356,22 @@ export default function Settings() {
             name="Gmail"
             icon="G"
             iconColor="#EA4335"
-            connected={true}
+            connected={settings.connected.Gmail}
+            onToggle={() => toggleConnection('Gmail')}
           />
           <ConnectedAccount
             name="LinkedIn"
             icon="in"
             iconColor="#0A66C2"
-            connected={false}
+            connected={settings.connected.LinkedIn}
+            onToggle={() => toggleConnection('LinkedIn')}
           />
           <ConnectedAccount
             name="Outlook"
             icon="O"
             iconColor="#0078D4"
-            connected={false}
+            connected={settings.connected.Outlook}
+            onToggle={() => toggleConnection('Outlook')}
           />
         </div>
       </motion.section>

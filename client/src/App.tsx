@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { AppDataProvider } from "./contexts/AppDataContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Deadlines from "./pages/Deadlines";
@@ -31,19 +32,21 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <TooltipProvider>
-          <Toaster
-            toastOptions={{
-              style: {
-                background: 'oklch(0.22 0.02 260)',
-                border: '1px solid oklch(0.30 0.02 260)',
-                color: 'oklch(0.93 0.01 260)',
-              },
-            }}
-          />
-          <Router />
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="dark" switchable>
+        <AppDataProvider>
+          <TooltipProvider>
+            <Toaster
+              toastOptions={{
+                style: {
+                  background: 'oklch(0.22 0.02 260)',
+                  border: '1px solid oklch(0.30 0.02 260)',
+                  color: 'oklch(0.93 0.01 260)',
+                },
+              }}
+            />
+            <Router />
+          </TooltipProvider>
+        </AppDataProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
