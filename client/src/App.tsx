@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Deadlines from "./pages/Deadlines";
 import Inbox from "./pages/Inbox";
 import Settings from "./pages/Settings";
+import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
 
 function Router() {
@@ -22,6 +23,7 @@ function Router() {
         <Route path="/deadlines" component={Deadlines} />
         <Route path="/inbox" component={Inbox} />
         <Route path="/settings" component={Settings} />
+        <Route path="/contact" component={Contact} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

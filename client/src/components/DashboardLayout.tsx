@@ -10,6 +10,7 @@ import {
   Calendar,
   Mail,
   Settings,
+  MessageCircle,
   ChevronLeft,
   ChevronRight,
   RotateCcw,
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/deadlines', label: 'Deadlines', icon: Calendar },
   { path: '/inbox', label: 'Inbox', icon: Mail },
   { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/contact', label: 'Contact Us', icon: MessageCircle },
 ];
 
 interface DashboardLayoutProps {
